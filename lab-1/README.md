@@ -15,21 +15,21 @@ User → parent → pipe1 → child1 → pipe2 → child2 → pipe3 → parent �
 make
 
 Or manually:
-
+```bash
 gcc parent.c -o parent
 gcc child1.c -o child1
 gcc child2.c -o child2
-
+```
 ## Run
 
 Interactive mode:
-
+```bash
 ./parent
-
+```
 With test file:
-
+```bash
 ./parent < tests.txt
-
+```
 ## Notes
 
 - OS: Linux (Ubuntu).
