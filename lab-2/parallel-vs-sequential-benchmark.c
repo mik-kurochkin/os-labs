@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 
-static size_t max_memory = 0;
+static size_t max_memory = 33 * 10000;
 static size_t current_memory = 0;
 static size_t n_threads = 0;
 static const char* filename = NULL;
@@ -26,6 +26,7 @@ typedef struct {
     const char* filename;
     size_t start;
     size_t end;
+    size_t memory_limit;
     Accumulator result;
     size_t count;
 } Thread_args;
@@ -99,16 +100,38 @@ static void* accumulate(void* arg) {
         error("failed to open file\n");
     }
 
-    size_t buffer_size = args->end - args->start;
-    char* buffer = safe_malloc(buffer_size);
-
     if(lseek(fd, args->start, SEEK_SET) == -1) {
         error("lseek error\n");
     }
 
-    size_t total = 0;
-    while(buffer_size > total) {
-        ssize_t bytes = read(fd, buffer + total, buffer_size - total);
+    size_t chunk_size = 33 * 1000;
+    size_t remaining_file = args->end - args->start;
+    if (chunk_size > remaining_file) {
+        chunk_size = remaining_file;
+    }
+
+    if (chunk_size > args->memory_limit) {
+        chunk_size = args->memory_limit;
+    }
+
+    if (chunk_size < remaining_file && chunk_size >= 33) {
+        chunk_size = (chunk_size / 33) * 33;
+    }
+
+    if (chunk_size < 32) {
+        error("memory limit is too small\n");
+    }
+
+    char* buffer = safe_malloc(chunk_size);
+
+    size_t total_read = 0;
+    while(remaining_file > total_read) {
+        size_t to_read = remaining_file - total_read;
+        if (to_read > chunk_size) {
+            to_read = chunk_size;
+        }
+
+        ssize_t bytes = read(fd, buffer, to_read);
         if (bytes < 0) {
             error("failed to read file\n");
         }
@@ -116,29 +139,30 @@ static void* accumulate(void* arg) {
         if (bytes == 0) {
             error("unexpected EOF\n");
         }
+    
 
-        total += (size_t)bytes;
-    }
+        for (size_t i = 0; i + 32 <= (size_t)bytes; i += 33) {
+            char string[33];
+            string[32] = '\0';
+            for (size_t j = 0; j < 32; j++) {
+                string[j] = buffer[i + j];
+            }
 
-    for (size_t i = 0; i + 32 <= buffer_size; i += 33) {
-        char string[33];
-        string[32] = '\0';
-        for (size_t j = 0; j < 32; j++) {
-            string[j] = buffer[i + j];
+            __uint128_t number = hex_to_uint128(string);
+
+            __uint128_t low_before_sum = args->result.low;
+            args->result.low += number;
+            if (low_before_sum > args->result.low) {
+                args->result.high++;
+            }
+            args->count++;
         }
 
-        __uint128_t number = hex_to_uint128(string);
-
-        __uint128_t low_before_sum = args->result.low;
-        args->result.low += number;
-        if (low_before_sum > args->result.low) {
-            args->result.high++;
-        }
-        args->count++;
+        total_read += (size_t)bytes;
     }
 
     close(fd);
-    safe_free(buffer, buffer_size);
+    safe_free(buffer, chunk_size);
 
     return NULL;
 }
@@ -323,6 +347,7 @@ int main(int argc, char* argv[]) {
         size_t base = total_items / n_threads;
         size_t rest = total_items % n_threads;
         size_t current_item = 0;
+        size_t thread_limit = max_memory / n_threads;
         for (size_t i = 0; i < n_threads; i++) {
             size_t items = base + ((size_t)i < rest ? 1 : 0);
             size_t start = current_item * 33;
@@ -335,6 +360,7 @@ int main(int argc, char* argv[]) {
                 .filename = filename,
                 .start = start,
                 .end = end,
+                .memory_limit = thread_limit,
                 .count = 0,
                 .result = {0}
             };
