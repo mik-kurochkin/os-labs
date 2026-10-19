@@ -29,7 +29,7 @@ gcc -Wall -Wextra -std=gnu11 parallel-vs-sequential-benchmark.c -o parallel-vs-s
 Sequential mode:
 
 ```bash
-./parallel-vs-sequential-benchmark --filename=tests --mode=seq --n_threads=0 --max_memory=1024
+./parallel-vs-sequential-benchmark --filename=tests --mode=seq --max_memory=1024
 ```
 
 Parallel mode with 4 threads:
