@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 
-static size_t max_memory = 33 * 10000;
+static size_t max_memory = 1024 * 1024;
 static size_t current_memory = 0;
 static size_t n_threads = 0;
 static const char* filename = NULL;
@@ -104,20 +104,17 @@ static void* accumulate(void* arg) {
         error("lseek error\n");
     }
 
-    size_t chunk_size = 33 * 1000;
+    size_t chunk_size = 33 * 10000;
     size_t remaining_file = args->end - args->start;
     if (chunk_size > remaining_file) {
         chunk_size = remaining_file;
     }
-
     if (chunk_size > args->memory_limit) {
         chunk_size = args->memory_limit;
     }
-
     if (chunk_size < remaining_file && chunk_size >= 33) {
         chunk_size = (chunk_size / 33) * 33;
     }
-
     if (chunk_size < 32) {
         error("memory limit is too small\n");
     }
@@ -175,9 +172,17 @@ static Accumulator sequential_accumulate(const char* filename, size_t* count) {
         error("failed to open file\n");
     }
 
+    size_t buffer_size = 33 * 10000;
+    if (buffer_size > max_memory) {
+        buffer_size = (max_memory / 33) * 33;
+    }
+
+    if (buffer_size < 32) {
+        error("memory limit is too small\n");
+    }
+
+    char* buffer = safe_malloc(buffer_size);
     ssize_t bytes = 0;
-    char buffer[33 * 100];
-    size_t buffer_size = sizeof(buffer);
     while ((bytes = read(fd, buffer, buffer_size)) > 0) {
         if (bytes % 33 != 0 && (bytes - 32) % 33 != 0) {
             error("file format error\n");
@@ -202,6 +207,7 @@ static Accumulator sequential_accumulate(const char* filename, size_t* count) {
     }
 
     close(fd);
+    safe_free(buffer, buffer_size);
 
     return sum;
 }
@@ -300,11 +306,15 @@ int main(int argc, char* argv[]) {
         error("cannot stat file\n");
     }
     size_t file_size = st.st_size;
+    if (file_size == 0) {
+        error("file is empty\n");
+    }
+
     struct timespec start, end;
     double elapsed_ms = 0.0;
     long long elapsed_ns = 0;
 
-    if (strcmp(mode, "seq") == 0 || n_threads <= 1) {
+    if (strcmp(mode, "seq") == 0 || n_threads <= 0) {
         size_t count = 0;
         __uint128_t remainder = 0;
 
@@ -334,20 +344,21 @@ int main(int argc, char* argv[]) {
         }
     }
     else if (strcmp(mode, "par") == 0) {
-        pthread_t* threads = malloc(n_threads * sizeof(pthread_t));
-        Thread_args* thread_args = malloc(n_threads * sizeof(Thread_args));
-
         size_t total_items = file_size / 33;
-        if (total_items % 33 != 0) {
+        if (file_size % 33 != 0) {
             total_items++;
         }
         if (total_items < n_threads) {
             n_threads = total_items;
         }
+
+        pthread_t* threads = safe_malloc(n_threads * sizeof(pthread_t));
+        Thread_args* thread_args = safe_malloc(n_threads * sizeof(Thread_args));
+        
         size_t base = total_items / n_threads;
         size_t rest = total_items % n_threads;
         size_t current_item = 0;
-        size_t thread_limit = max_memory / n_threads;
+        size_t thread_limit = (max_memory - current_memory) / n_threads;
         for (size_t i = 0; i < n_threads; i++) {
             size_t items = base + ((size_t)i < rest ? 1 : 0);
             size_t start = current_item * 33;
@@ -369,11 +380,15 @@ int main(int argc, char* argv[]) {
         clock_gettime(CLOCK_MONOTONIC, &start);
 
         for (size_t i = 0; i < n_threads; i++) {
-            pthread_create(&threads[i], NULL, accumulate, &thread_args[i]);
+            if(pthread_create(&threads[i], NULL, accumulate, &thread_args[i]) != 0) {
+                error("failed to create thread\n");
+            }
         }
 
         for (size_t i = 0; i < n_threads; i++) {
-            pthread_join(threads[i], NULL);
+            if(pthread_join(threads[i], NULL) != 0) {
+                error("failed to join thread\n");
+            }
         }
 
         Accumulator total_sum = {0};
@@ -409,8 +424,8 @@ int main(int argc, char* argv[]) {
             error("failed to write to stdout\n");
         }
 
-        free(threads);
-        free(thread_args);
+        safe_free(threads, (size_t)(n_threads * sizeof(pthread_t)));
+        safe_free(thread_args, (size_t)(n_threads * sizeof(Thread_args)));
     }
     
     return 0;
