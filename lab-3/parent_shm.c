@@ -1,16 +1,23 @@
 #include "channel.h"
 
-const char SHM_PARENT_CHILD[] = "/parent-child-shm";
-const char SHM_CHILD_CHILD[] = "/child-child-shm";
-const char SHM_CHILD_PARENT[] = "/child-parent-shm";
-const char SEM_PC_DATA[] = "/pc-data-sem";
-const char SEM_PC_SPACE[] = "/pc-space-sem";
-const char SEM_CC_DATA[] = "/cc-data-sem";
-const char SEM_CC_SPACE[] = "/cc-space-sem";
-const char SEM_CP_DATA[] = "/cp-data-sem";
-const char SEM_CP_SPACE[] = "/cp-space-sem";
-
 int main() {
+    pid_t my_pid = getpid();
+    
+    char SHM_PARENT_CHILD[64], SHM_CHILD_CHILD[64], SHM_CHILD_PARENT[64];
+    char SEM_PC_DATA[64], SEM_PC_SPACE[64];
+    char SEM_CC_DATA[64], SEM_CC_SPACE[64];
+    char SEM_CP_DATA[64], SEM_CP_SPACE[64];
+
+    snprintf(SHM_PARENT_CHILD, sizeof(SHM_PARENT_CHILD), "/parent-child-shm-%d", my_pid);
+    snprintf(SHM_CHILD_CHILD, sizeof(SHM_CHILD_CHILD), "/child-child-shm-%d", my_pid);
+    snprintf(SHM_CHILD_PARENT, sizeof(SHM_CHILD_PARENT), "/child-parent-shm-%d", my_pid);
+
+    snprintf(SEM_PC_DATA, sizeof(SEM_PC_DATA), "/pc-data-sem-%d", my_pid);
+    snprintf(SEM_PC_SPACE, sizeof(SEM_PC_SPACE), "/pc-space-sem-%d", my_pid);
+    snprintf(SEM_CC_DATA, sizeof(SEM_CC_DATA), "/cc-data-sem-%d", my_pid);
+    snprintf(SEM_CC_SPACE, sizeof(SEM_CC_SPACE), "/cc-space-sem-%d", my_pid);
+    snprintf(SEM_CP_DATA, sizeof(SEM_CP_DATA), "/cp-data-sem-%d", my_pid);
+    snprintf(SEM_CP_SPACE, sizeof(SEM_CP_SPACE), "/cp-space-sem-%d", my_pid);
     char path[PATH_MAX];
 	ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
 	if (len == -1) {
